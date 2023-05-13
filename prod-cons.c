@@ -168,12 +168,11 @@ void *consumer (void *q)
     fifo->times[fifo->outCounter++] = waitTime;
     
     if (fifo->outCounter == p * LOOP) {
-      // If this thread does the last work function, then break and infrom all other threads that queue functions ended
+      // If this thread does the last work function, infrom all other threads that queue functions ended and then do the work
       fifo->ended = 1;
       fifo->empty = 0;
       pthread_mutex_unlock (fifo->mut);
       pthread_cond_signal (fifo->notEmpty);
-      break;
     }
 
     pthread_mutex_unlock (fifo->mut);
