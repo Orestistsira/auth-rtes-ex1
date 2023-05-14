@@ -62,7 +62,7 @@ int main ()
 
   printf("Testing for 1 to %d consumers...\n", MAXCONSUMERS);
 
-  for (q=1;q<MAXCONSUMERS+1;q++){
+  for (q=1;q<MAXCONSUMERS+1;q++) {
 
     pthread_t pro[p];
     pthread_t con[q];
@@ -76,7 +76,7 @@ int main ()
     for (int i=0;i<p;i++) {
       pthread_create (&pro[i], NULL, producer, fifo);
     }
-    // Start producer threads
+    // Start consumer threads
     for (int i=0;i<q;i++) {
       pthread_create (&con[i], NULL, consumer, fifo);
     }
@@ -85,11 +85,12 @@ int main ()
     for (int i=0;i<p;i++) {
       pthread_join (pro[i], NULL);
     }
-    // Wait for producer threads
+    // Wait for consumer threads
     for (int i=0;i<q;i++) {
       pthread_join (con[i], NULL);
     }
 
+    // Print waiting times to file
     for (int i=0;i<fifo->outCounter;i++) {
       fprintf(fp, "%d,", fifo->times[i]);
     }
@@ -124,7 +125,7 @@ void *producer (void *q)
 
   for (i = 0; i < LOOP; i++) {
 
-    //Create work function structure
+    // Create work function structure
     workFunction inFunc;
     inFunc.work = &work;
     inFunc.arg = &rad;
@@ -152,32 +153,29 @@ void *consumer (void *q)
 
   while (1) {
     pthread_mutex_lock (fifo->mut);
-    while (fifo->empty) {
-      pthread_cond_wait (fifo->notEmpty, fifo->mut);
-    }
-    if (fifo->ended) {
-      // If all work functions have ended break while loop and inform the next thread
+    if (fifo->outCounter == p * LOOP - 1) {
+      // If this thread does the last work function, infrom all other threads that queue functions ended and then do the work
       pthread_mutex_unlock (fifo->mut);
-      pthread_cond_signal (fifo->notEmpty);
       break;
     }
 
+    fifo->outCounter++;
+
+    while (fifo->empty) {
+      pthread_cond_wait (fifo->notEmpty, fifo->mut);
+    }
+
     queueDel (fifo, &outFunc);
+
+    // Calculate waiting time and store it to times array
     gettimeofday(&endTime, NULL);
     int waitTime = (int) ((endTime.tv_sec - outFunc.startTime.tv_sec) * 1e6 + (endTime.tv_usec - outFunc.startTime.tv_usec));
-    fifo->times[fifo->outCounter++] = waitTime;
-    
-    if (fifo->outCounter == p * LOOP) {
-      // If this thread does the last work function, infrom all other threads that queue functions ended and then do the work
-      fifo->ended = 1;
-      fifo->empty = 0;
-      pthread_mutex_unlock (fifo->mut);
-      pthread_cond_signal (fifo->notEmpty);
-    }
+    fifo->times[fifo->outCounter] = waitTime;
 
     pthread_mutex_unlock (fifo->mut);
     pthread_cond_signal (fifo->notFull);
 
+    // Do the work out of critical section
     outFunc.work(outFunc.arg);
   }
 
@@ -203,8 +201,9 @@ queue *queueInit (void)
   q->notEmpty = (pthread_cond_t *) malloc (sizeof (pthread_cond_t));
   pthread_cond_init (q->notEmpty, NULL);
 
+  // Initialize times array and outCounter
   q->times = (int*) malloc(p * LOOP * sizeof(int));
-  q->outCounter = 0;
+  q->outCounter = -1;
 	
   return (q);
 }
